@@ -4,13 +4,14 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+// Đảm bảo sử dụng cổng do Render cung cấp
 const PORT = process.env.PORT || 3000; 
 
 // --- CẤU HÌNH ---
 const HISTORY_API_URL = 'https://lichsu.onrender.com/api/taixiu/ws';
+// Đã xác nhận tên file là 'thuattoan.txt'
 const PREDICT_FILE_PATH = path.join(__dirname, 'thuattoan.txt'); 
 
-// Biến lưu trữ hàm dự đoán đã được tạo
 let vipPredictTX = null;
 
 // --- HÀM TẢI VÀ TẠO THUẬT TOÁN TỪ FILE ---
@@ -22,22 +23,21 @@ function loadPredictAlgorithm() {
             throw new Error(`File ${path.basename(PREDICT_FILE_PATH)} trống.`);
         }
 
-        // 💡 CẢI TIẾN: HÀM CÓ 2 ĐỐI SỐ: 'index' VÀ 'historyString'
-        // Bạn có thể dùng historyString trong logic của thuattoan.txt
+        // 💡 Chấp nhận 2 đối số: 'index' (số phiên) và 'historyString' (chuỗi lịch sử T/X)
         vipPredictTX = new Function('index', 'historyString', fileContent);
         
         console.log(`✅ Thuật toán dự đoán đã được tải thành công từ ${path.basename(PREDICT_FILE_PATH)}`);
         
     } catch (err) {
+        // Lỗi CRITICAL, server vẫn chạy nhưng trả về lỗi 503 cho API
         console.error(`❌ Lỗi CRITICAL khi tải thuật toán (${path.basename(PREDICT_FILE_PATH)}):`, err.message);
-        // Server vẫn chạy, nhưng hàm dự đoán sẽ báo lỗi
         vipPredictTX = (index, historyString) => "Lỗi: Thuật toán không hoạt động";
     }
 }
 
 loadPredictAlgorithm(); 
 
-// --- CÁC HÀM KHÁC ---
+// --- HÀM TẠO ĐỘ TIN CẬY NGẪU NHIÊN ---
 function getRandomConfidence() {
   const min = 65.0;
   const max = 95.0;
@@ -45,16 +45,16 @@ function getRandomConfidence() {
   return confidence.toFixed(1) + "%";
 }
 
-// Hàm giả lập lấy 13 kết quả lịch sử (Cần lấy từ API thực tế)
-function getMockHistoryString(data) {
-    // 💡 LƯU Ý: Bạn cần chỉnh sửa hàm này để lấy 13 kết quả T/X gần nhất từ API
-    // Hiện tại, ta chỉ mock 13 ký tự 'T' để test hàm dự đoán.
-    return 'TTTTTTTTTTTTT'; 
+// 💡 HÀM GIẢ LẬP LẤY CHUỖI LỊCH SỬ 13 KÝ TỰ
+function getHistoryString(currentData) {
+    // Tạm thời trả về chuỗi mẫu, vì API nguồn chỉ trả về 1 phiên.
+    // Bạn cần sửa hàm này nếu có API lịch sử đầy đủ.
+    return 'TTTTTTTTTTTTT'; // Chuỗi mẫu 13 ký tự T/X
 }
 
 // --- ENDPOINT DỰ ĐOÁN ---
 app.get('/api/2k15', async (req, res) => {
-  // Kiểm tra lỗi tải thuật toán 
+  // Kiểm tra lỗi tải thuật toán
   if (vipPredictTX(0, '').includes('Lỗi: Thuật toán không hoạt động')) {
        return res.status(503).json({
           id: "@cskhtoollxk",
@@ -77,10 +77,10 @@ app.get('/api/2k15', async (req, res) => {
     
     const nextSession = phienTruocInt + 1;
     
-    // 💡 LẤY CHUỖI LỊCH SỬ MOCK/GIẢ ĐỊNH
-    const historyString = getMockHistoryString(data); 
+    // LẤY CHUỖI LỊCH SỬ (giả lập/thực tế)
+    const historyString = getHistoryString(currentData); 
 
-    // 💡 GỌI HÀM DỰ ĐOÁN VỚI 2 THAM SỐ
+    // GỌI HÀM DỰ ĐOÁN VỚI 2 THAM SỐ
     const prediction = vipPredictTX(nextSession, historyString);
     const confidence = getRandomConfidence();
 
@@ -93,7 +93,7 @@ app.get('/api/2k15', async (req, res) => {
       phien_sau: nextSession,
       du_doan: prediction,
       do_tin_cay: confidence,
-      giai_thich: `Tra cứu mẫu 13 ký tự: ${historyString}`
+      giai_thich: `lonmemay ${historyString}`
     });
 
   } catch (err) {
@@ -108,8 +108,11 @@ app.get('/api/2k15', async (req, res) => {
   }
 });
 
-// ... (các endpoint khác)
+app.get('/', (req, res) => {
+  res.send("Chào mừng đến API dự đoán Tài Xỉu! Truy cập /api/2k15 để xem dự đoán.");
+});
 
 app.listen(PORT, () => {
     console.log(`🚀 Server đang chạy trên cổng ${PORT}`);
 });
+        
