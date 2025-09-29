@@ -6,7 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- CẤU HÌNH ---
-const HISTORY_API_URL = 'https://kbvvv.onrender.com/api/taixiu/ws';
+const HISTORY_API_URL = 'https://lichsu.onrender.com/api/taixiu/ws';
 const ALGORITHM_FILE = 'thuattoan.txt';
 
 // Bạn cần xác định chính xác Key trong file của bạn có bao nhiêu ký tự.
@@ -155,3 +155,4 @@ app.get('/', (req, res) => {
 loadPredictionAlgorithm();
 
 app.listen(PORT, () => console.log(`Server đang chạy trên cổng ${PORT}`));
+
