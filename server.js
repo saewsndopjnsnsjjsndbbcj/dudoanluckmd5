@@ -2,40 +2,42 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs'); 
 const path = require('path');
-// Import Node Cache
 const NodeCache = require('node-cache'); 
 
 const app = express();
 const PORT = process.env.PORT || 3000; 
 
 // --- CẤU HÌNH ---
-const HISTORY_API_URL = 'https://lichsu.onrender.com/api/taixiu/ws';
-const PREDICT_FILE_PATH = path.join(__dirname, 'thuattoan.txt'); 
-
-// Khởi tạo Cache: Lưu dữ liệu trong 5 giây (stdTTL: Standard Time To Live)
-const historyCache = new NodeCache({ stdTTL: 5, checkperiod: 120 });
+const HISTORY_API_URL = 'https://lichsu.onrender.com/api/taixiu/ws'; // API của bạn
+const PREDICT_FILE_PATH = path.join(__dirname, 'thuattoan.txt'); // File thuật toán
+const historyCache = new NodeCache({ stdTTL: 5, checkperiod: 120 }); // Cache 5 giây
 const CACHE_KEY = 'latest_history';
 
 let vipPredictTX = null;
 
 // --- HÀM TẢI VÀ TẠO THUẬT TOÁN TỪ FILE ---
 function loadPredictAlgorithm() {
-    // ... (Code này giữ nguyên, đã fix lỗi cú pháp) ...
     try {
         const fileContent = fs.readFileSync(PREDICT_FILE_PATH, 'utf8');
+
         if (!fileContent || fileContent.trim().length === 0) {
             throw new Error(`File ${path.basename(PREDICT_FILE_PATH)} trống.`);
         }
+
+        // Tạo hàm với 2 đối số: 'index' (số phiên) và 'historyString' (chuỗi T/X 13 ký tự)
         vipPredictTX = new Function('index', 'historyString', fileContent);
+        
         console.log(`✅ Thuật toán dự đoán đã được tải thành công từ ${path.basename(PREDICT_FILE_PATH)}`);
+        
     } catch (err) {
+        // Báo lỗi CRITICAL nếu cú pháp file TXT sai (như lỗi Unexpected token ':')
         console.error(`❌ Lỗi CRITICAL khi tải thuật toán (${path.basename(PREDICT_FILE_PATH)}):`, err.message);
         vipPredictTX = (index, historyString) => "Lỗi: Thuật toán không hoạt động";
     }
 }
 loadPredictAlgorithm(); 
 
-// --- HÀM TẠO ĐỘ TIN CẬY NGẪU NHIÊN ---
+// --- CÁC HÀM KHÁC ---
 function getRandomConfidence() {
   const min = 65.0;
   const max = 95.0;
@@ -43,10 +45,12 @@ function getRandomConfidence() {
   return confidence.toFixed(1) + "%";
 }
 
-// 💡 HÀM GIẢ LẬP LẤY CHUỖI LỊCH SỬ 13 KÝ TỰ (CẦN SỬA ĐỂ LẤY HISTORY THỰC)
+// 💡 HÀM GIẢ LẬP LẤY CHUỖI LỊCH SỬ 13 KÝ TỰ
 function getHistoryString(currentData) {
-    // Tạm thời trả về chuỗi mẫu
-    return 'TTTTTTTTTTTTT'; 
+    // API nguồn của bạn hiện chỉ trả về một phiên.
+    // Nếu bạn cần 13 phiên, bạn cần gọi một API khác hoặc sửa API nguồn.
+    // Tạm thời, ta dùng một chuỗi mẫu để đảm bảo logic tra cứu trong thuattoan.txt hoạt động.
+    return 'TTTTTTTTTTTTT'; // Chuỗi mẫu 13 ký tự T/X
 }
 
 // --- HÀM LẤY DỮ LIỆU TỪ CACHE HOẶC API ---
@@ -84,7 +88,6 @@ app.get('/api/2k15', async (req, res) => {
   }
   
   try {
-    // 💡 SỬ DỤNG HÀM CÓ CACHE
     const data = await fetchCurrentData();
 
     const currentData = data[0];
@@ -93,6 +96,7 @@ app.get('/api/2k15', async (req, res) => {
     if (isNaN(phienTruocInt)) throw new Error(`Dữ liệu phiên không hợp lệ: ${currentData.Phien}`);
     
     const nextSession = phienTruocInt + 1;
+    
     const historyString = getHistoryString(currentData); 
 
     // GỌI HÀM DỰ ĐOÁN VỚI 2 THAM SỐ
@@ -130,4 +134,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Server đang chạy trên cổng ${PORT}`);
 });
-      
+           
