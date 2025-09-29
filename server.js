@@ -4,12 +4,12 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-// Render sử dụng cổng trong biến môi trường PORT (thường là 10000)
+// Đảm bảo sử dụng cổng do Render cung cấp (thường là 10000)
 const PORT = process.env.PORT || 3000; 
 
 // --- CẤU HÌNH ---
 const HISTORY_API_URL = 'https://lichsu.onrender.com/api/taixiu/ws';
-// 💡 ĐÃ SỬA: Sử dụng PREDICT_FILE_PATH trỏ đến 'thuattoan.txt'
+// 💡 Sử dụng tên file đã xác nhận: thuattoan.txt
 const PREDICT_FILE_PATH = path.join(__dirname, 'thuattoan.txt'); 
 
 // Biến lưu trữ hàm dự đoán đã được tạo
@@ -18,28 +18,27 @@ let vipPredictTX = null;
 // --- HÀM TẢI VÀ TẠO THUẬT TOÁN TỪ FILE ---
 function loadPredictAlgorithm() {
     try {
-        // Đọc nội dung file đồng bộ (readFileSync) CHỈ MỘT LẦN khi khởi động
+        // Đọc nội dung file đồng bộ (readFileSync)
         const fileContent = fs.readFileSync(PREDICT_FILE_PATH, 'utf8');
 
         if (!fileContent || fileContent.trim().length === 0) {
-            // Sẽ ném ra lỗi nếu file trống, giúp debug dễ hơn
             throw new Error(`File ${path.basename(PREDICT_FILE_PATH)} trống hoặc không có nội dung.`);
         }
 
-        // Tạo hàm mới từ nội dung file. Đầu vào là 'index'.
+        // Tạo hàm mới từ nội dung file.
         vipPredictTX = new Function('index', fileContent);
         
         console.log(`✅ Thuật toán dự đoán đã được tải thành công từ ${path.basename(PREDICT_FILE_PATH)}`);
         
-        // Kiểm tra nhanh để đảm bảo hàm được tạo hợp lệ
+        // Kiểm tra nhanh để bắt lỗi logic sớm
         if (typeof vipPredictTX(1) !== 'string') {
              console.warn("⚠ Hàm dự đoán không trả về chuỗi 'Tài'/'Xỉu'. Kiểm tra lại logic file TXT.");
         }
 
     } catch (err) {
-        // Lỗi này SẼ BỊ BẮT nếu file trống, thiếu hoặc sai cú pháp
+        // 💡 BẮT LỖI RÕ RÀNG VÀO LOG
         console.error(`❌ Lỗi CRITICAL khi tải thuật toán (${path.basename(PREDICT_FILE_PATH)}):`, err.message);
-        // Thiết lập hàm mặc định để không làm treo server
+        // Thiết lập hàm mặc định để server KHÔNG TREO, chỉ trả về lỗi 503
         vipPredictTX = (index) => "Lỗi: Thuật toán không hoạt động";
     }
 }
@@ -47,7 +46,7 @@ function loadPredictAlgorithm() {
 // Gọi hàm này ngay lập tức khi server khởi động
 loadPredictAlgorithm(); 
 
-// --- HÀM TẠO ĐỘ TIN CẬY NGẪU NHIÊN ---
+// --- CÁC HÀM KHÁC ---
 function getRandomConfidence() {
   const min = 65.0;
   const max = 95.0;
@@ -62,9 +61,9 @@ app.get('/api/2k15', async (req, res) => {
        return res.status(503).json({
           id: "@cskhtoollxk",
           error: "Dịch vụ dự đoán không sẵn sàng",
-          du_doan: vipPredictTX(0),
+          du_doan: "Kiểm tra file thuattoan.txt",
           do_tin_cay: "0%",
-          giai_thich: "Vui lòng kiểm tra lại nội dung file thuattoan.txt"
+          giai_thich: "File thuật toán bị thiếu hoặc có lỗi cú pháp."
       });
   }
   
@@ -95,7 +94,7 @@ app.get('/api/2k15', async (req, res) => {
       phien_sau: nextSession,
       du_doan: prediction,
       do_tin_cay: confidence,
-      giai_thich: "bú cu tao không"
+      giai_thich: "nhìn tk bố m"
     });
 
   } catch (err) {
@@ -105,7 +104,7 @@ app.get('/api/2k15', async (req, res) => {
       error: "Lỗi hệ thống hoặc không thể lấy dữ liệu lịch sử",
       du_doan: "Không thể dự đoán",
       do_tin_cay: "0%",
-      giai_thich: "Lỗi nội bộ. Đang chờ dữ liệu lịch sử hoặc kết nối thất bại."
+      giai_thich: "Lỗi kết nối API nguồn hoặc dữ liệu không hợp lệ."
     });
   }
 });
@@ -119,4 +118,4 @@ app.listen(PORT, () => {
     // Thông báo này là DẤU HIỆU THÀNH CÔNG cho Render
     console.log(`🚀 Server đang chạy trên cổng ${PORT}`);
 });
-        
+      
