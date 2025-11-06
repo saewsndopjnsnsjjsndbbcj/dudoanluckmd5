@@ -1,322 +1,267 @@
-// server_vip_pro_final.js
-// Node.js + Express - BOT DỰ ĐOÁN SIÊU VIP PRO (Tài/Xỉu)
-// - THUẬT TOÁN: ALL-IN-ONE MULTI-STRATEGY (Bệt, Đảo 1-1, Sát Lực, Thuận Trend)
-// - Độ tin cậy HOÀN TOÀN NGẪU NHIÊN 50-90%
-// - Thống kê Chính xác: Dự đoán phiên nào lưu phiên đó, so sánh với KQ thực tế.
-// Chạy: node server_vip_pro_final.js
+// server_wormgpt.js
+// Node.js + Express - WormGPT Algorithm (QRG version)
+// Cập nhật: fix key viết hoa / thường, thay toàn bộ thuật toán mới
+// Chạy: node server_wormgpt.js
 
 const express = require("express");
 const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HISTORY_API_URL =
+  process.env.HISTORY_API_URL || "https://lichsuluckmdk.onrender.com/api/taixiu/ws";
 
-// -------------------- CẤU HÌNH --------------------
-const HISTORY_API_URL = process.env.HISTORY_API_URL || "https://lichsuluckmd5-tz95.onrender.com/api/taixiu/ws"; 
-const RECENT_COUNT_TREND = 15; // 15 phiên cho xu hướng chung
-const RECENT_COUNT_PATTERN = 10; // 10 phiên cho Pattern ngắn và chuỗi hiển thị
-const CONF_MIN = 50.0; // %
-const CONF_MAX = 90.0; // %
-
-// -------------------- THỐNG KÊ & CACHE --------------------
-let thongKeNgay = {
-    ngay: getDateVN(),
-    tong: 0, 
-    dung: 0,
-    sai: 0
-};
-
-let cacheDuDoan = {
-    phienDuDoan: null,     
-    duDoan: "Đang chờ",    
-    doTinCay: "0.0%",      
-    chuoiPattern: "",      
-    ketQuaThucTe: null,     
-    daCapNhatThongKe: false 
-};
-
-// -------------------- HỖ TRỢ NGÀY GIỜ VN --------------------
+// ================== Helpers ==================
 function getTimeVN() {
-    return new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+  return new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 function getDateVN() {
-    return new Date().toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+  return new Date().toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+}
+function randConfidence(min = 50.0, max = 90.0) {
+  const r = Math.random() * (max - min) + min;
+  return r.toFixed(1) + "%";
 }
 
-// -------------------- RESET THỐNG KÊ 00:00 VN --------------------
-function resetThongKeNgay() {
-    thongKeNgay = { ngay: getDateVN(), tong: 0, dung: 0, sai: 0 };
+// Chuẩn hóa key dữ liệu (Phien, Ket_qua, Xuc_xac_1, ...)
+function chuanHoaPhien(item) {
+  return {
+    phien:
+      item.phien || item.Phien || item.PHIEN || 0,
+    xuc_xac_1:
+      item.xuc_xac_1 || item.Xuc_xac_1 || item.XUC_XAC_1 || 0,
+    xuc_xac_2:
+      item.xuc_xac_2 || item.Xuc_xac_2 || item.XUC_XAC_2 || 0,
+    xuc_xac_3:
+      item.xuc_xac_3 || item.Xuc_xac_3 || item.XUC_XAC_3 || 0,
+    tong: item.tong || item.Tong || item.TONG || 0,
+    ket_qua: item.ket_qua || item.Ket_qua || item.KET_QUA || "",
+    id_nguon: item.id_nguon || item.ID_NGUON || "@unknown",
+  };
+}
+
+// ================== Thống kê ==================
+let thongKeNgay = { ngay: getDateVN(), tong: 0, dung: 0, sai: 0 };
+let cacheDuDoan = {
+  phienDuDoan: null,
+  duDoan: "Đang chờ",
+  doTinCay: "0.0%",
+  chuoiPattern: "",
+  ketQuaThucTe: null,
+  daCapNhatThongKe: false,
+};
+
+function resetIfNewDay() {
+  const today = getDateVN();
+  if (thongKeNgay.ngay !== today) {
+    thongKeNgay = { ngay: today, tong: 0, dung: 0, sai: 0 };
     cacheDuDoan = {
-        phienDuDoan: null, duDoan: "Đang chờ", doTinCay: "0.0%", 
-        chuoiPattern: "", ketQuaThucTe: null, daCapNhatThongKe: false
+      phienDuDoan: null,
+      duDoan: "Đang chờ",
+      doTinCay: "0.0%",
+      chuoiPattern: "",
+      ketQuaThucTe: null,
+      daCapNhatThongKe: false,
     };
-    console.log(`[${getTimeVN()}] -> Đã reset thống kê hàng ngày và cache.`);
+    console.log(`[${getTimeVN()}] -> Reset thống kê hàng ngày`);
+  }
 }
 
-(function scheduleMidnightReset() {
+// ================== Thuật toán WormGPT ==================
+class ThuatToanTaiXiu {
+  constructor() {
+    this.tenThuatToan = "WormGPT-Algorithm";
+    this.phienTruoc = null;
+    this.chuoiLienTiep = 0;
+    this.xuHuong = "khong_ro";
+    console.log("✅ Thuật toán Worm GPT đã được khởi tạo");
+  }
+
+  phanTichLichSu(lichSu) {
+    if (!lichSu || lichSu.length === 0) {
+      return {
+        xu_huong: "ngau_nhien",
+        ty_le_tai: 50,
+        ty_le_xiu: 50,
+        chuoi_lien_tiep: 0,
+      };
+    }
+
+    let demTai = 0;
+    let demXiu = 0;
+    let chuoiHienTai = 1;
+    let ketQuaTruoc = lichSu[0].ket_qua;
+
+    for (let i = 0; i < Math.min(lichSu.length, 50); i++) {
+      const ketQua = lichSu[i].ket_qua;
+      if (ketQua === "Tài") demTai++;
+      else if (ketQua === "Xỉu") demXiu++;
+
+      if (i > 0) {
+        if (ketQua === ketQuaTruoc) chuoiHienTai++;
+        else chuoiHienTai = 1;
+      }
+      ketQuaTruoc = ketQua;
+    }
+
+    const tong = demTai + demXiu;
+    const tyLeTai = tong > 0 ? (demTai / tong) * 100 : 50;
+    const tyLeXiu = tong > 0 ? (demXiu / tong) * 100 : 50;
+
+    let xuHuong = "khong_ro";
+    if (tyLeTai > 60) xuHuong = "tai";
+    else if (tyLeXiu > 60) xuHuong = "xiu";
+    else if (Math.abs(tyLeTai - tyLeXiu) < 10) xuHuong = "can_bang";
+
+    return {
+      xu_huong: xuHuong,
+      ty_le_tai: tyLeTai,
+      ty_le_xiu: tyLeXiu,
+      chuoi_lien_tiep: chuoiHienTai,
+      tong_phien_phan_tich: tong,
+    };
+  }
+
+  duDoan(lichSu) {
     try {
-        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
-        const nextMidnight = new Date(now);
-        nextMidnight.setHours(24, 0, 0, 0);
-        const ms = nextMidnight - now;
-        setTimeout(() => {
-            resetThongKeNgay();
-            setInterval(resetThongKeNgay, 24 * 60 * 60 * 1000);
-        }, ms);
+      if (!lichSu || lichSu.length < 3) {
+        return { du_doan: Math.random() > 0.5 ? "Tài" : "Xỉu" };
+      }
+
+      const phanTich = this.phanTichLichSu(lichSu);
+      const kq1 = lichSu[0].ket_qua;
+      const kq2 = lichSu[1].ket_qua;
+      const kq3 = lichSu[2].ket_qua;
+      let duDoan = "Tài";
+
+      if (phanTich.chuoi_lien_tiep >= 6) {
+        duDoan = kq1 === "Tài" ? "Xỉu" : "Tài";
+        return { du_doan: duDoan };
+      }
+
+      if (phanTich.chuoi_lien_tiep >= 3 && phanTich.chuoi_lien_tiep <= 5) {
+        duDoan = kq1;
+        return { du_doan: duDoan };
+      }
+
+      const cauBetKep = this.nhanDienCauBetKep(lichSu.slice(0, 8).map((p) => p.ket_qua));
+      if (cauBetKep) return { du_doan: cauBetKep };
+
+      if (phanTich.xu_huong === "tai" && phanTich.ty_le_tai > 65) duDoan = "Tài";
+      else if (phanTich.xu_huong === "xiu" && phanTich.ty_le_xiu > 65)
+        duDoan = "Xỉu";
+
+      if (kq1 === kq2 && kq1 !== kq3) {
+        duDoan = kq1 === "Tài" ? "Xỉu" : "Tài";
+      }
+
+      if (Math.random() * 100 < 20) {
+        duDoan = duDoan === "Tài" ? "Xỉu" : "Tài";
+      }
+
+      return { du_doan: duDoan };
     } catch (e) {
-        console.warn("Không thể lên lịch reset tự động.");
+      return { du_doan: Math.random() > 0.5 ? "Tài" : "Xỉu" };
     }
-})();
+  }
 
-// Hàm kiểm tra và reset thống kê nếu sang ngày mới
-function resetIfNewDayAndKeep() {
-    const today = getDateVN();
-    if (thongKeNgay.ngay !== today) {
-        resetThongKeNgay();
+  nhanDienCauBetKep(mangKetQua) {
+    if (mangKetQua.length < 6) return null;
+    let nhom = [];
+    let dem = 1;
+    for (let i = 1; i < mangKetQua.length; i++) {
+      if (mangKetQua[i] === mangKetQua[i - 1]) dem++;
+      else {
+        nhom.push({ kq: mangKetQua[i - 1], so_lan: dem });
+        dem = 1;
+      }
     }
+    nhom.push({ kq: mangKetQua[mangKetQua.length - 1], so_lan: dem });
+
+    if (nhom.length >= 4) {
+      const last = nhom.slice(-2);
+      if (last[0].so_lan >= 2 && last[1].so_lan >= 2 && last[0].kq !== last[1].kq) {
+        return last[0].kq;
+      }
+    }
+    return null;
+  }
 }
 
-// -------------------- HÀM HỖ TRỢ --------------------
+const thuatToan = new ThuatToanTaiXiu();
 
-function randConfidence(min = CONF_MIN, max = CONF_MAX) {
-    const r = Math.random() * (max - min) + min;
-    return r.toFixed(1) + "%";
-}
-
-function normalizeResultInternal(val) {
-    if (!val && val !== "") return "";
-    const s = String(val).trim().toLowerCase();
-    if (s === "tài" || s.includes("t")) return "T";
-    if (s === "xỉu" || s.includes("x")) return "X";
-    return "";
-}
-
-function normalizeResultExternal(val) {
-    const internal = normalizeResultInternal(val);
-    if (internal === "T") return "Tài";
-    if (internal === "X") return "Xỉu";
-    return "";
-}
-
-// -------------------- THUẬT TOÁN SIÊU VIP PRO (MULTI-STRATEGY) --------------------
-function superVipProPredict(historyArray) {
-    const recent = Array.isArray(historyArray) ? historyArray : [];
-    let duDoanInternal = null; // T hoặc X
-    let logMessage = "Không xác định";
-    
-    // Lấy chuỗi T/X cho 10 phiên gần nhất
-    const patternData = recent.slice(0, RECENT_COUNT_PATTERN);
-    const chuoiPattern = patternData.map(item => normalizeResultInternal(item.ket_qua)).join('');
-    
-    
-    // --- BƯỚC 1: BẮT CẦU BỆT (Ưu tiên cao nhất: 3+ phiên) ---
-    const last3 = chuoiPattern.substring(0, 3);
-    if (last3.length >= 3 && last3.includes(last3[0].repeat(3))) {
-        duDoanInternal = last3[0]; 
-        logMessage = `Bắt Cầu Bệt ${last3[0].repeat(3)}`;
-    }
-
-    // --- BƯỚC 2: BẮT CẦU ĐẢO 1-1 (4 phiên -> dự đoán tiếp 1-1) ---
-    if (duDoanInternal === null) {
-        const last4 = chuoiPattern.substring(0, 4);
-        if (last4.length === 4) {
-            if (last4 === "TXTX" || last4 === "XTXT") {
-                duDoanInternal = last4[3] === "T" ? "X" : "T"; 
-                logMessage = `Bắt Cầu Đảo 1-1 (${last4} -> ${duDoanInternal})`;
-            }
-        }
-    }
-    
-    // --- BƯỚC 3: BẮT CẦU SÁT LỰC (2-1-2 / 3-2-3, dùng 6 phiên) ---
-    if (duDoanInternal === null) {
-        const last6 = chuoiPattern.substring(0, 6);
-        if (last6.length === 6) {
-            // Cầu 2-1-2: X-X-T-X-X-T -> Dự đoán X
-            if (last6[0] === last6[1] && last6[3] === last6[4] && last6[1] !== last6[2] && last6[2] === last6[5] && last6[0] === last6[3]) {
-                 duDoanInternal = last6[0]; 
-                 logMessage = `Bắt Cầu Sát Lực 2-1-2 (${last6})`;
-            }
-            // Cầu 3-2-3: T-T-T-X-X-T -> Dự đoán T
-            else if (last6[0] === last6[1] && last6[0] === last6[2] && last6[3] === last6[4] && last6[2] !== last6[3] && last6[4] !== last6[5] && last6[5] === last6[2]) {
-                duDoanInternal = last6[0]; 
-                logMessage = `Bắt Cầu Sát Lực 3-2-3 (${last6})`;
-            }
-        }
-    }
-    
-    // --- BƯỚC 4: DỰ ĐOÁN THUẬN TREND LỚN (15 phiên) ---
-    if (duDoanInternal === null) {
-        const trendData = recent.slice(0, RECENT_COUNT_TREND);
-        let countT = 0, countX = 0;
-        trendData.forEach(item => {
-            const kq = normalizeResultInternal(item.ket_qua);
-            if (kq === "T") countT++;
-            else if (kq === "X") countX++;
-        });
-
-        if (countT + countX > 0) {
-            if (countT > countX) { 
-                duDoanInternal = "T"; 
-                logMessage = "Bắt Thuận Trend Lớn Tài (15p)";
-            } else if (countX > countT) { 
-                duDoanInternal = "X"; 
-                logMessage = "Bắt Thuận Trend Lớn Xỉu (15p)";
-            } else { 
-                duDoanInternal = Math.random() < 0.5 ? "T" : "X"; 
-                logMessage = "Cân bằng, Random";
-            }
-        } else {
-            duDoanInternal = Math.random() < 0.5 ? "T" : "X";
-            logMessage = "Không đủ data, Random";
-        }
-    }
-    
-    const duDoanExternal = duDoanInternal === "T" ? "Tài" : (duDoanInternal === "X" ? "Xỉu" : "Đang chờ");
-
-    return { duDoan: duDoanExternal, chuoiPattern, logMessage };
-}
-
-
-// -------------------- CẬP NHẬT ĐÚNG/SAI KHI CÓ KQ THỰC TẾ --------------------
+// ================== Accuracy ==================
 function checkAndUpdateAccuracy(latest) {
-    try {
-        if (!latest || latest.Phien === undefined || !cacheDuDoan.phienDuDoan) return;
-
-        const predictedPhien = String(cacheDuDoan.phienDuDoan);
-        const latestPhien = String(latest.Phien);
-
-        if (predictedPhien === latestPhien) {
-            
-            const actual = normalizeResultExternal(latest.Ket_qua); 
-            const predicted = cacheDuDoan.duDoan; 
-            
-            if((actual === "Tài" || actual === "Xỉu") && !cacheDuDoan.daCapNhatThongKe) {
-                
-                if (actual === predicted) {
-                    thongKeNgay.dung = (thongKeNgay.dung || 0) + 1;
-                    console.log(`[${getTimeVN()}] -> Phiên ${latestPhien}: DỰ ĐOÁN ĐÚNG! (${predicted} vs ${actual}).`);
-                } else {
-                    thongKeNgay.sai = (thongKeNgay.sai || 0) + 1;
-                    console.log(`[${getTimeVN()}] -> Phiên ${latestPhien}: DỰ ĐOÁN SAI! (${predicted} vs ${actual}).`);
-                }
-                
-                cacheDuDoan.daCapNhatThongKe = true; 
-            } 
-            
-            if (actual === "Tài" || actual === "Xỉu") {
-                cacheDuDoan.ketQuaThucTe = actual; 
-            }
-        }
-
-    } catch (e) {
-        console.warn("checkAndUpdateAccuracy error:", e && e.message ? e.message : e);
+  try {
+    if (!latest || latest.phien === undefined) return;
+    if (!cacheDuDoan || !cacheDuDoan.phienDuDoan) return;
+    const predictedPhien = String(cacheDuDoan.phienDuDoan);
+    const latestPhien = String(latest.phien);
+    if (predictedPhien === latestPhien) {
+      const actual = latest.ket_qua;
+      const predicted = cacheDuDoan.duDoan;
+      if ((actual === "Tài" || actual === "Xỉu") && !cacheDuDoan.daCapNhatThongKe) {
+        if (actual === predicted) thongKeNgay.dung++;
+        else thongKeNgay.sai++;
+        cacheDuDoan.daCapNhatThongKe = true;
+      }
+      if (actual === "Tài" || actual === "Xỉu") cacheDuDoan.ketQuaThucTe = actual;
     }
+  } catch {}
 }
 
-// -------------------- ENDPOINT: /api/lookup_predict --------------------
+// ================== API Endpoints ==================
 app.get("/api/lookup_predict", async (req, res) => {
-    try {
-        const response = await axios.get(HISTORY_API_URL, { timeout: 7000 });
-        // Sửa lỗi: Đảm bảo truy cập các trường API lịch sử bằng chữ hoa (nếu API trả về chữ hoa)
-        const rawData = Array.isArray(response.data) ? response.data : (response.data ? [response.data] : []);
-        
-        if (rawData.length === 0) {
-            return res.json({
-                id: "VIP_PRO_001",
-                time_vn: getTimeVN(),
-                error: "Không có dữ liệu lịch sử",
-                thong_ke: thongKeNgay
-            });
-        }
+  try {
+    resetIfNewDay();
+    const response = await axios.get(HISTORY_API_URL, { timeout: 7000 });
+    const rawData = Array.isArray(response.data) ? response.data : [response.data];
+    const data = rawData.map(chuanHoaPhien).filter((x) => x.phien);
+    if (data.length === 0)
+      return res.json({ id: "WORMGPT_EMPTY", time_vn: getTimeVN(), error: "Không có dữ liệu" });
 
-        resetIfNewDayAndKeep();
+    checkAndUpdateAccuracy(data[0]);
 
-        // 1. Cập nhật thống kê và lưu kết quả thực tế của phiên trước đó (nếu có)
-        checkAndUpdateAccuracy(rawData[0]);
+    const phienGanNhat = String(data[0].phien);
+    const phienDuDoan = String(parseInt(phienGanNhat) + 1);
+    const ketQuaGanNhat = data[0].ket_qua;
+    const chuoiPattern = data.slice(0, 10).map((i) => i.ket_qua).join(",");
 
-        // Xác định phiên dự đoán tiếp theo
-        const phienGanNhat = (rawData[0] && rawData[0].Phien !== undefined) ? String(rawData[0].Phien) : "N/A";
-        const phienDuDoanTiepTheo = (phienGanNhat !== "N/A" && phienGanNhat.match(/^\d+$/)) ? String(parseInt(phienGanNhat) + 1) : "N/A";
-        const ketQuaGanNhat = normalizeResultExternal(rawData[0].Ket_qua); 
+    const predict = thuatToan.duDoan(data);
+    const duDoan = predict.du_doan;
+    const doTinCay = randConfidence();
 
-        // 2. Trả về cache nếu phiên hiện tại vẫn đang chờ kết quả 
-        if (cacheDuDoan.phienDuDoan === phienDuDoanTiepTheo && phienDuDoanTiepTheo !== "N/A") {
-            resetIfNewDayAndKeep();
-            return res.json({
-                id: "@STPSWQ",
-                time_vn: getTimeVN(),
-                phien_gan_nhat: phienGanNhat,
-                ket_qua_gan_nhat: ketQuaGanNhat,
-                phien_du_doan: cacheDuDoan.phienDuDoan,
-                du_doan: cacheDuDoan.duDoan,
-                do_tin_cay: cacheDuDoan.doTinCay,
-                chuoi_pattern: cacheDuDoan.chuoiPattern, 
-                ket_qua_thuc_te_phien_du_doan: cacheDuDoan.ketQuaThucTe, 
-                thong_ke: thongKeNgay
-            });
-        }
-        
-        // --- TÍNH DỰ ĐOÁN MỚI CHO PHIÊN TIẾP THEO ---
-        const { duDoan, chuoiPattern, logMessage } = superVipProPredict(rawData); 
-        const doTinCay = randConfidence(); // Độ tin cậy Random
+    cacheDuDoan = {
+      phienDuDoan,
+      duDoan,
+      doTinCay,
+      chuoiPattern,
+      ketQuaThucTe: null,
+      daCapNhatThongKe: false,
+    };
+    thongKeNgay.tong++;
 
-        // 3. Cập nhật cache và tăng tổng dự đoán (chỉ khi có dự đoán mới)
-        cacheDuDoan = {
-            phienDuDoan: phienDuDoanTiepTheo,
-            duDoan, 
-            doTinCay,
-            chuoiPattern,
-            ketQuaThucTe: null, 
-            daCapNhatThongKe: false
-        };
-
-        resetIfNewDayAndKeep();
-        thongKeNgay.tong = (thongKeNgay.tong || 0) + 1; 
-        
-        console.log(`[${getTimeVN()}] -> DỰ ĐOÁN MỚI: Phiên ${phienDuDoanTiepTheo} là ${duDoan} (${logMessage})`);
-
-        // 4. Trả về kết quả mới
-        return res.json({
-            id: "@STPSWQ",
-            time_vn: getTimeVN(),
-            phien_gan_nhat: phienGanNhat,
-            ket_qua_gan_nhat: ketQuaGanNhat, 
-            phien_du_doan: phienDuDoanTiepTheo,
-            du_doan: duDoan, 
-            do_tin_cay: doTinCay,
-            chuoi_pattern: chuoiPattern,
-            ket_qua_thuc_te_phien_du_doan: null, 
-            thong_ke: thongKeNgay
-        });
-
-    } catch (err) {
-        console.error("Lỗi chung khi xử lý dự đoán:", err && err.message ? err.message : err);
-        return res.status(500).json({
-            id: "VIP_PRO_001_ERR",
-            time_vn: getTimeVN(),
-            error: "Lỗi trong quá trình xử lý dữ liệu hoặc thuật toán.",
-            thong_ke: thongKeNgay
-        });
-    }
-});
-
-// -------------------- ENDPOINT: /api/thongke --------------------
-app.get("/api/thongke", (req, res) => {
-    resetIfNewDayAndKeep();
-    return res.json({
-        id: "VIP_PRO_001_STATS",
-        time_vn: getTimeVN(),
-        thong_ke: thongKeNgay,
-        cache_du_doan_gan_nhat: cacheDuDoan 
+    res.json({
+      id: "WORMGPT_001",
+      time_vn: getTimeVN(),
+      phien_gan_nhat: phienGanNhat,
+      ket_qua_gan_nhat: ketQuaGanNhat,
+      phien_du_doan: phienDuDoan,
+      du_doan: duDoan,
+      do_tin_cay: doTinCay,
+      chuoi_pattern: chuoiPattern,
+      ket_qua_thuc_te_phien_du_doan: null,
+      thong_ke: thongKeNgay,
+      thong_tin_thuat_toan: thuatToan.tenThuatToan,
     });
+  } catch (e) {
+    res.status(500).json({ error: "Không lấy được dữ liệu lịch sử" });
+  }
 });
 
-// -------------------- TRANG CHỦ --------------------
 app.get("/", (req, res) => {
-    res.send("👑 SIÊU VIP PRO API đang chạy. Endpoint: /api/lookup_predict - Tiếng Việt");
+  res.send("🐍 WormGPT VIP - Endpoint: /api/lookup_predict");
 });
 
-// -------------------- RUN --------------------
 app.listen(PORT, () => {
-    console.log(`🚀 SIÊU VIP PRO server (MULTI-STRATEGY) chạy cổng ${PORT} - Time VN: ${getTimeVN()}`);
+  console.log(`🚀 WormGPT server đang chạy cổng ${PORT} | ${getTimeVN()}`);
 });
-        
