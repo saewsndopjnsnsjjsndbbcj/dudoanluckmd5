@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // Khai báo API URL chính xác
-const API_URL = 'https://lichsuluck-qyon.onrender.com/api/taixiu/ws'; 
+const API_URL = 'https://lichsuluckmd5-x2yv.onrender.com/api/taixiu/ws'; 
 
 // =======================
 // BOT AI PREDICTION SYSTEM
@@ -1288,3 +1288,4 @@ app.get('/predict', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server bot AI đang chạy trên cổng ${PORT}`);
 });
+
