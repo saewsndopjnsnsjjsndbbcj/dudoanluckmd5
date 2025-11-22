@@ -4,7 +4,7 @@ const NodeCache = require('node-cache');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const SUNWIN_API_URL = 'https://lichsusumc.onrender.com/latest';
+const SUNWIN_API_URL = 'https://lichsuluckmd5-x2yv.onrender.com/api/taixiu/ws';
 const historicalDataCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
 
 // Chuẩn hóa dữ liệu API
